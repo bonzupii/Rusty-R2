@@ -2,6 +2,10 @@
 
 Rusty-R2 is the next generation of our small, agentic language model, designed to function as a cynical, technically-focused terminal assistant. This project represents a significant architectural upgrade from Rusty-R1, moving to more modern model architectures, a robust PPO-based training pipeline, and enhanced safety features.
 
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See the [LICENSE](./LICENSE) file for details.
+
 ## Persona: Rusty-R2
 
 - **Origin**: An upgraded hackerbot from a digital Scrapyard.
