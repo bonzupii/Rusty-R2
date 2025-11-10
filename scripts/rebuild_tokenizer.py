@@ -24,7 +24,7 @@ from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, trainers,
 from tqdm import tqdm
 
 # --- R2 Tokenizer Configuration ---
-VOCAB_SIZE = 65536  # High cap to effectively let data determine vocab size
+VOCAB_SIZE = 24000  # Match README's "24K vocabulary" description
 MIN_FREQUENCY = 2
 SPECIAL_TOKENS = ["<pad>", "<bos>", "<eos>", "<unk>"]
 # Limit to text files for tokenizer training, don't process binary Arrow files

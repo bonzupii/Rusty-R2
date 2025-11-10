@@ -25,7 +25,12 @@ import time
 from json import JSONDecodeError, JSONDecoder
 from pathlib import Path
 from typing import Optional, Tuple
-import resource
+
+# Try to import resource, but allow graceful degradation on platforms without it
+try:
+    import resource
+except ImportError:
+    resource = None
 
 import torch
 from tokenizers import Tokenizer
@@ -107,6 +112,10 @@ def _preexec_set_limits(cpu_seconds: int = CMD_CPU_LIMIT):
     This function uses the `resource` module, which is not available on Windows.
     On Windows, these limits will not be applied, reducing sandboxing effectiveness.
     """
+    if resource is None:
+        # Return None to indicate no preexec function should be used
+        return None
+    
     def _fn():
         try:
             resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
@@ -176,6 +185,7 @@ def execute_command(command: str, dry_run: bool) -> str:
                 continue
 
         # Execute with preexec limits (POSIX). Do not use shell=True.
+        limits_fn = _preexec_set_limits(CMD_CPU_LIMIT)
         start_ts = time.time()
         result = subprocess.run(
             cmd_parts,
@@ -184,7 +194,7 @@ def execute_command(command: str, dry_run: bool) -> str:
             text=True,
             timeout=CMD_TIMEOUT,
             check=False,
-            preexec_fn=_preexec_set_limits(CMD_CPU_LIMIT),
+            preexec_fn=limits_fn if limits_fn is not None else None,
         )
         elapsed = time.time() - start_ts
 
@@ -193,7 +203,14 @@ def execute_command(command: str, dry_run: bool) -> str:
             output += f"STDOUT:\n{result.stdout.strip()}\n"
         if result.stderr:
             output += f"STDERR:\n{result.stderr.strip()}\n"
-        return output.strip()
+        
+        # Truncate output to prevent unbounded context growth
+        max_len = 4096
+        output = output.strip()
+        if len(output) > max_len:
+            output = output[:max_len] + "\n...(truncated)"
+        
+        return output
     except subprocess.TimeoutExpired:
         return f"OUT: Command timed out after {CMD_TIMEOUT}s: {command}"
     except FileNotFoundError:

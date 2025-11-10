@@ -1,0 +1,23 @@
+[project]
+name = "rusty-r2"
+version = "0.1.0"
+description = "Rusty-R2: RWKV-based agentic terminal language model"
+requires-python = ">=3.10"
+dependencies = [
+  "torch",
+  "tokenizers",
+  "numpy",
+  "datasets",
+  "tqdm",
+  "tensorboard",
+]
+
+[project.optional-dependencies]
+bitsandbytes = ["bitsandbytes"]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rusty_r2", "agent", "utils", "scripts", "tasks"]

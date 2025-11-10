@@ -1,7 +1,4 @@
 # FILE: agent/train_agentic.py
-from tqdm import tqdm
-
-# FILE: agent/train_agentic.py
 # Copyright (C) Micah L. Ostrow <bonzupii@protonmail.com> 
 # Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
 #
@@ -157,43 +154,23 @@ def main():
             for mb in buffer.get(minibatch_size):
                 mb_obs, mb_actions, mb_old_log_probs, mb_advantages, mb_returns, mb_values = mb
                 
-                # Re-compute logits, values, and entropy from the current policy
-                logits, new_values = model(mb_obs)
-                
-                # CRITICAL FIX: Calculate the log probabilities of the actions that were
-                # actually taken (`mb_actions`) according to the *current* policy (`logits`).
-                log_prob_dist = F.log_softmax(logits, dim=-1)
-                
-                # The shape of mb_actions is (minibatch_size, max_action_len)
-                # The shape of log_prob_dist is (minibatch_size, max_obs_len, vocab_size)
-                # We need to gather the log_probs for each token in each action.
-                # This is complex because observation and action lengths vary.
-                # For this implementation, we will use a simplified but correct approach for PPO
-                # by re-calculating the log_prob for the *entire sequence* (obs + action)
-                # and then subtracting the obs part.
-                # A more direct approach would be to only re-compute for the action part.
-                
-                # CRITICAL FIX: Calculate log probabilities for actions taken according to current policy
-                # Need to get logits for the entire sequence (obs + actions) and extract action logits
-                full_sequence = torch.cat([mb_obs, mb_actions], dim=1)  # Concatenate obs and actions
-                full_logits, _ = model(full_sequence)  # Get logits for full sequence
-                
-                # Extract only the logits for action positions (after obs positions)
+                # CRITICAL FIX: Single forward pass for PPO step
+                full_sequence = torch.cat([mb_obs, mb_actions], dim=1)
+                full_logits, _ = model(full_sequence)
                 obs_len = mb_obs.size(1)
-                action_logits = full_logits[:, obs_len:, :]  # Shape: (batch, action_len, vocab_size)
-                
-                # Calculate log probabilities for action tokens
-                action_log_probs = F.log_softmax(action_logits, dim=-1)  # (batch, action_len, vocab_size)
-                
-                # Gather log probabilities for the specific action tokens that were taken
-                # mb_actions shape: (batch, action_len)
-                gathered_log_probs = action_log_probs.gather(2, mb_actions.unsqueeze(-1)).squeeze(-1)  # (batch, action_len)
-                
-                # Apply mask to ignore padding tokens (assuming pad_token_id = 0)
-                action_mask = (mb_actions != 0).float()  # (batch, action_len)
-                
-                # Sum log probabilities across action sequence for each batch item
-                new_log_probs = (gathered_log_probs * action_mask).sum(dim=1)  # (batch,)
+                action_logits = full_logits[:, obs_len:, :]  # (B, A, V)
+
+                # Calculate log-probs and entropy using this single pass
+                log_probs_all = F.log_softmax(action_logits, dim=-1)
+                probs_all = F.softmax(action_logits, dim=-1)
+
+                action_mask = (mb_actions != 0).float()  # relies on <pad>=0
+
+                gathered_log_probs = log_probs_all.gather(2, mb_actions.unsqueeze(-1)).squeeze(-1)
+                new_log_probs = (gathered_log_probs * action_mask).sum(dim=1)
+
+                entropy_per_token = -(probs_all * log_probs_all).sum(dim=-1)
+                entropy = (entropy_per_token * action_mask).sum() / (action_mask.sum() + 1e-8)
 
                 # Policy Loss (PPO-Clip)
                 log_ratio = new_log_probs - mb_old_log_probs
@@ -203,26 +180,14 @@ def main():
                 mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
 
                 pg_loss1 = -mb_advantages * ratio
-                pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_eps, 1 + args.clip_eps)  # Fixed typo: was rario/ratio -> now ratio
+                pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_eps, 1 + args.clip_eps)
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-                # Value Loss - Use mb_values from buffer instead of new_values
-                v_loss = F.mse_loss(mb_values.squeeze(-1), mb_returns)
-
-                # Entropy Loss - calculate from action distribution for proper PPO
-                # We calculate entropy over the vocabulary for each position in the action sequence and take the mean.
-                # Extract action logits for entropy calculation
-                full_sequence = torch.cat([mb_obs, mb_actions], dim=1)
-                full_logits_entropy, _ = model(full_sequence)
-                obs_len = mb_obs.size(1)
-                action_logits_entropy = full_logits_entropy[:, obs_len:, :]  # Get action logits only
-                action_probs = F.softmax(action_logits_entropy, dim=-1)
-                action_log_probs = F.log_softmax(action_logits_entropy, dim=-1)
-                
-                # Calculate entropy for action positions only, accounting for padding
-                entropy_per_token = -(action_probs * action_log_probs).sum(dim=-1)  # (batch, action_len)
-                action_mask = (mb_actions != 0).float()  # (batch, action_len)
-                entropy = (entropy_per_token * action_mask).sum() / action_mask.sum()  # Mean over non-padding tokens
+                # Value Loss using current value predictions
+                with torch.no_grad():
+                    _, v_preds_full = model(mb_obs)
+                v_preds = v_preds_full[:, -1, :].squeeze(-1)
+                v_loss = F.mse_loss(v_preds, mb_returns)
                 
                 loss = pg_loss - args.ent_coef * entropy + v_loss * args.vf_coef
                 

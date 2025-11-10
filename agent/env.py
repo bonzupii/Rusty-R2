@@ -16,12 +16,17 @@ import json
 # GNU Affero General Public License for more details.
 
 import os
-import resource
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+# Try to import resource, but allow graceful degradation on platforms without it
+try:
+    import resource
+except ImportError:
+    resource = None
 
 # --- Safety & Sandboxing Configuration ---
 # Allowed commands for any potential CMD action (though this env focuses on EDIT)
@@ -36,6 +41,10 @@ def set_limits(cpu_seconds: int):
     This function uses the `resource` module, which is not available on Windows.
     On Windows, these limits will not be applied, reducing sandboxing effectiveness.
     """
+    if resource is None:
+        # Return None to indicate no preexec function should be used
+        return None
+        
     def _set():
         # Set CPU time limit
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
@@ -139,14 +148,17 @@ class CodingEnv:
                 try:
                     compile(new_content, '<string>', 'exec')
                     syntax_reward = 0.3
+                    # Run tests with sandboxing only if syntax is valid
+                    output, passed = self._run_tests()
+                    test_reward = 0.7 if passed else 0.0
                 except SyntaxError:
                     syntax_reward = -0.1
+                    # Skip running tests when syntax is clearly broken
+                    output = "SyntaxError: Code has syntax errors and cannot be executed"
+                    passed = False
+                    test_reward = 0.0
 
-                # Run tests with sandboxing
-                output, passed = self._run_tests()
-                
                 # Final reward
-                test_reward = 0.7 if passed else 0.0
                 reward = syntax_reward + test_reward
                 
                 done = passed or (self.step_count >= self.max_steps)
@@ -178,6 +190,9 @@ class CodingEnv:
     def _run_tests(self) -> Tuple[str, bool]:
         """Runs the test suite in a sandboxed subprocess."""
         try:
+            # Get the limits function, which may be None on platforms without resource module
+            limits_fn = set_limits(self.cpu_limit)
+            
             result = subprocess.run(
                 ["python", "tests.py"],
                 cwd=self.work_dir,
@@ -185,7 +200,7 @@ class CodingEnv:
                 text=True,
                 timeout=self.timeout,
                 check=False,
-                preexec_fn=set_limits(self.cpu_limit),
+                preexec_fn=limits_fn if limits_fn is not None else None,
             )
             passed = result.returncode == 0
             output = result.stdout + result.stderr
@@ -196,8 +211,13 @@ class CodingEnv:
             # This could catch errors from preexec_fn on non-Unix systems
             passed = False
             output = f"Failed to run tests: {e}"
+
+        # Truncate output to prevent unbounded context growth
+        max_len = 4096
+        if len(output) > max_len:
+            output = output[:max_len] + "...(truncated)"
         
-        return (output[:1000] + '...') if len(output) > 1000 else output, passed
+        return output, passed
 
     def close(self):
         if self.work_dir and self.work_dir.exists():

@@ -2,3 +2,7 @@ torch
 tokenizers
 numpy
 datasets
+tqdm
+tensorboard
+# Optional:
+# bitsandbytes

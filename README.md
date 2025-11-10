@@ -57,11 +57,14 @@ rusty-r2/
 ├── tasks/
 │   └── sum_list/           # An example coding task for the agent.
 ├── tests/
-│   └── test_r2_equivalence.py # Test suite for R2 components.
+│   ├── test_r2_equivalence.py     # Original test suite for R2 components.
+│   ├── test_tokenizer_specials.py # Test for tokenizer special token IDs.
+│   └── test_checkpoint_roundtrip.py # Test for checkpoint functionality.
 ├── utils/
 │   ├── checkpoint.py       # Centralized checkpoint saving/loading utilities.
 │   └── rl.py               # PPO RolloutBuffer and action generation helpers.
 ├── README.md               # This file.
+├── pyproject.toml          # Project configuration for packaging and dependencies.
 ├── requirements.txt        # Python dependencies.
 ├── rusty_terminal.py       # Interactive terminal for the agent.
 └── train_supervised.py     # Script for initial supervised model training.
@@ -72,83 +75,71 @@ rusty-r2/
 1.  **Clone the repository.**
 2.  **Install dependencies**:
     ```bash
-    pip install -r requirements.txt
+    pip install -e .
     # For 8-bit optimizers and quantization (highly recommended):
     pip install bitsandbytes
     ```
 
-## Usage
+## How to Run
 
-### 1. Prepare Data
-Download curated code datasets from Hugging Face. These will be saved to `./data/hf/`.
-```bash
-python scripts/download_datasets.py
-```
+1.  **Create virtual environment**:
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
 
-### 2. Build the Tokenizer
-This command trains a new 24K vocabulary tokenizer from the files in `./data/raw/` and the downloaded datasets in `./data/hf/`, saving it to `rusty_r2/tokenizer/tokenizer.json`.
-```bash
-python scripts/rebuild_tokenizer.py
-```
+2.  **Install package in development mode**:
+    ```bash
+    pip install -e .
+    # Optionally install bitsandbytes for 8-bit optimizers:
+    pip install bitsandbytes
+    ```
 
-### 3. Supervised Training (Phase 1)
-Train the base language model on the concatenated text data. This creates a foundational model that understands language and code structure.
-```bash
-python train_supervised.py \
+3.  **Build tokenizer**:
+    ```bash
+    python scripts/download_datasets.py
+    python scripts/rebuild_tokenizer.py
+    ```
 
-    --tokenizer_path rusty_r2/tokenizer/tokenizer.json \
-    --data_dir data/hf/ \
-    --max_steps 50000 \
-    --batch_size 8 \
-    --grad_accum_steps 8 \
-    --seq_len 1024 \
-    --gradient_checkpointing \
-    --checkpoints_dir ./checkpoints_r2_supervised \
-    --device cuda
-```
-Checkpoints will be saved in `./checkpoints_r2_supervised/`.
+4.  **Run supervised training**:
+    ```bash
+    python train_supervised.py \
+        --tokenizer_path rusty_r2/tokenizer/tokenizer.json \
+        --data_dir data/hf/ \
+        --max_steps 50000 \
+        --batch_size 8 \
+        --grad_accum_steps 8 \
+        --seq_len 1024 \
+        --gradient_checkpointing \
+        --checkpoints_dir ./checkpoints_r2_supervised \
+        --device cuda
+    ```
 
-### 4. Agentic Fine-Tuning (Phase 2)
-Fine-tune the model using Proximal Policy Optimization (PPO) on coding tasks. This requires a base model checkpoint from the supervised training phase.
-```bash
-python agent/train_agentic.py \
-    --init_checkpoint ./checkpoints_r2_supervised/step_XXXXX.pt \
-    --tokenizer_path rusty_r2/tokenizer/tokenizer.json \
-    --total_timesteps 100000 \
-    --num_steps 256 \
-    --ppo_epochs 4 \
-    --num_minibatches 4 \
-    --log_dir runs_ppo_r2 \
-    --checkpoints_dir ./checkpoints_r2_agentic \
-    --device cuda
-```
+5.  **Run agentic (PPO) training**:
+    ```bash
+    python agent/train_agentic.py \
+        --init_checkpoint ./checkpoints_r2_supervised/step_XXXXX.pt \
+        --tokenizer_path rusty_r2/tokenizer/tokenizer.json \
+        --total_timesteps 100000 \
+        --num_steps 256 \
+        --ppo_epochs 4 \
+        --num_minibatches 4 \
+        --log_dir runs_ppo_r2 \
+        --checkpoints_dir ./checkpoints_r2_agentic \
+        --device cuda
+    ```
 
-### 5. Interact with Rusty-R2
-Run the interactive terminal to chat with your trained agent.
-```bash
-python rusty_terminal.py --checkpoint ./checkpoints_r2_agentic/agent_step_XXXXX.pt
-```
-Inside the terminal, you can type messages, or use meta-commands:
-- `:q` or `exit`: Quit the terminal.
-- `:dry`: Toggle dry-run mode, which prints commands instead of executing them.
+6.  **Run tests**:
+    ```bash
+    python -m unittest tests/test_r2_equivalence.py
+    python -m unittest tests/test_tokenizer_specials.py
+    python -m unittest tests/test_checkpoint_roundtrip.py
+    ```
 
-### 6. Run Inference Benchmarks
-Test the model's generation speed and memory usage.
-```bash
-python inference_runtime.py \
-    --checkpoint ./checkpoints_r2_supervised/step_XXXXX.pt \
-    --quantization 8bit \
-    --prompt "USER: Write a python function to reverse a string."
-    --max_new_tokens 100 \
-    --compile \
-    --device cuda
-```
-
-### 7. Run Tests
-Execute the test suite to verify R2 component sanity.
-```bash
-python -m unittest tests/test_r2_equivalence.py
-```
+7.  **Interact with Rusty-R2**:
+    ```bash
+    python rusty_terminal.py --checkpoint ./checkpoints_r2_agentic/agent_step_XXXXX.pt
+    ```
 
 ## Model & Protocol
 
