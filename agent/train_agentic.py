@@ -52,6 +52,7 @@ def main():
     parser = argparse.ArgumentParser(description="PPO-Lite Agentic Training for Rusty-R2")
     # Model & Data
     parser.add_argument("--init_checkpoint", type=str, required=True)
+    parser.add_argument("--resume_from_checkpoint", type=str, default=None, help="Path to checkpoint to resume from.")
     parser.add_argument("--tokenizer_path", type=str, default="rusty_r2/tokenizer/tokenizer.json")
     # PPO Hyperparameters
     parser.add_argument("--total_timesteps", type=int, default=50000)
@@ -85,8 +86,17 @@ def main():
     Path(args.checkpoints_dir).mkdir(parents=True, exist_ok=True)
     tokenizer = Tokenizer.from_file(args.tokenizer_path)
     
-    ckpt = load_checkpoint(Path(args.init_checkpoint), device=device)
-    model_config = ckpt['model_config']
+    # Load initial checkpoint
+    if args.resume_from_checkpoint:
+        print(f"Resuming from checkpoint: {args.resume_from_checkpoint}")
+        ckpt = load_checkpoint(Path(args.resume_from_checkpoint), device=device)
+        model_config = ckpt['model_config']
+        global_step = ckpt.get('global_step', 0)
+    else:
+        # Load base supervised checkpoint to initialize the model
+        ckpt = load_checkpoint(Path(args.init_checkpoint), device=device)
+        model_config = ckpt['model_config']
+        global_step = 0
     
     # Filter config to only include params accepted by the model
     accepted_args = TinyRWKVLM.__init__.__code__.co_varnames
@@ -99,6 +109,10 @@ def main():
         optimizer = bnb_optim.AdamW8bit(model.parameters(), lr=args.lr, eps=1e-5)
     else:
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, eps=1e-5)
+
+    # Load optimizer state if resuming from a PPO checkpoint
+    if args.resume_from_checkpoint and 'optimizer_state_dict' in ckpt:
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
     env = CodingEnv()
     buffer = RolloutBuffer(args.num_steps, num_envs, (args.max_obs_len,), (args.max_new_tokens,), device, args.gamma, args.gae_lambda)
