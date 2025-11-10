@@ -133,103 +133,122 @@ def main():
     num_updates = int(args.total_timesteps // batch_size) + 1
     progress_bar = tqdm(range(1, num_updates + 1), desc="PPO Updates", unit="update")
     
-    for update in range(1, num_updates + 1):
-        for step in range(args.num_steps):
-            global_step += 1 * num_envs
-            
-            # --- Rollout Phase ---
-            action_ids, log_prob, value, full_sequence = generate_action(
-                model, tokenizer, next_obs, args.max_new_tokens
-            )
-            
-            action_text = tokenizer.decode(action_ids[0].tolist())
-            obs_text, reward, done, info = env.step(action_text)
-
-            buffer.add(next_obs.squeeze(0), action_ids.squeeze(0), log_prob, value, reward, done)
-            
-            if done:
-                print(f"Global Step: {global_step}, Task: {info.get('task', 'N/A')}, Passed: {info.get('passed', False)}, Reward: {reward:.2f}")
-                writer.add_scalar("charts/episodic_return", reward, global_step)
-                obs_text = env.reset()
-
-            obs_ids_full = tokenizer.encode(obs_text).ids
-            start_idx = max(0, len(obs_ids_full) - args.max_obs_len)
-            next_obs = torch.tensor([obs_ids_full[start_idx:]], dtype=torch.long, device=device)
-
-        # --- Advantage Calculation ---
-        with torch.no_grad():
-            _, next_value = model(next_obs)
-            next_value = next_value[:, -1, :]
-        buffer.compute_returns_and_advantages(next_value, next_done)
-
-        # --- Update Phase ---
-        model.train()
-        for epoch in range(args.ppo_epochs):
-            for mb in buffer.get(minibatch_size):
-                mb_obs, mb_actions, mb_old_log_probs, mb_advantages, mb_returns, mb_values = mb
+    try:
+        for update in range(1, num_updates + 1):
+            for step in range(args.num_steps):
+                global_step += 1 * num_envs
                 
-                # CRITICAL FIX: Single forward pass for PPO step
-                full_sequence = torch.cat([mb_obs, mb_actions], dim=1)
-                full_logits, _ = model(full_sequence)
-                obs_len = mb_obs.size(1)
-                action_logits = full_logits[:, obs_len:, :]  # (B, A, V)
-
-                # Calculate log-probs and entropy using this single pass
-                log_probs_all = F.log_softmax(action_logits, dim=-1)
-                probs_all = F.softmax(action_logits, dim=-1)
-
-                action_mask = (mb_actions != 0).float()  # relies on <pad>=0
-
-                gathered_log_probs = log_probs_all.gather(2, mb_actions.unsqueeze(-1)).squeeze(-1)
-                new_log_probs = (gathered_log_probs * action_mask).sum(dim=1)
-
-                entropy_per_token = -(probs_all * log_probs_all).sum(dim=-1)
-                entropy = (entropy_per_token * action_mask).sum() / (action_mask.sum() + 1e-8)
-
-                # Policy Loss (PPO-Clip)
-                log_ratio = new_log_probs - mb_old_log_probs
-                ratio = torch.exp(log_ratio)
-
-                # Normalize advantages at the minibatch level
-                mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
-
-                pg_loss1 = -mb_advantages * ratio
-                pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_eps, 1 + args.clip_eps)
-                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-
-                # Value Loss using current value predictions - gradients should flow through value head
-                _, v_preds_full = model(mb_obs)
-                v_preds = v_preds_full[:, -1, :].squeeze(-1)
-                v_loss = F.mse_loss(v_preds, mb_returns)
+                # --- Rollout Phase ---
+                action_ids, log_prob, value, full_sequence = generate_action(
+                    model, tokenizer, next_obs, args.max_new_tokens
+                )
                 
-                loss = pg_loss - args.ent_coef * entropy + v_loss * args.vf_coef
+                action_text = tokenizer.decode(action_ids[0].tolist())
+                obs_text, reward, done, info = env.step(action_text)
+
+                buffer.add(next_obs.squeeze(0), action_ids.squeeze(0), log_prob, value, reward, done)
                 
-                optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+                if done:
+                    print(f"Global Step: {global_step}, Task: {info.get('task', 'N/A')}, Passed: {info.get('passed', False)}, Reward: {reward:.2f}")
+                    writer.add_scalar("charts/episodic_return", reward, global_step)
+                    obs_text = env.reset()
 
-        # --- Logging ---
-        sps = int(global_step / (time.time() - start_time))
-        print(f"SPS: {sps}, Update: {update}")
-        writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
-        writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-        writer.add_scalar("losses/entropy", entropy.item(), global_step)
+                obs_ids_full = tokenizer.encode(obs_text).ids
+                start_idx = max(0, len(obs_ids_full) - args.max_obs_len)
+                next_obs = torch.tensor([obs_ids_full[start_idx:]], dtype=torch.long, device=device)
 
-        # Update progress bar
-        progress_bar.set_postfix({"global_step": global_step, "policy_loss": f"{pg_loss.item():.4f}", "value_loss": f"{v_loss.item():.4f}"})
-        progress_bar.update(1)
+            # --- Advantage Calculation ---
+            with torch.no_grad():
+                _, next_value = model(next_obs)
+                next_value = next_value[:, -1, :]
+            buffer.compute_returns_and_advantages(next_value, next_done)
 
-        # --- Checkpointing ---
-        if update % 20 == 0:
-            save_checkpoint(
-                model,
-                Path(args.checkpoints_dir),
-                f"agent_step_{global_step}.pt",
-                optimizer=optimizer,
-                global_step=global_step,
-                model_config=model_config,
-            )
+            # --- Update Phase ---
+            model.train()
+            for epoch in range(args.ppo_epochs):
+                for mb in buffer.get(minibatch_size):
+                    mb_obs, mb_actions, mb_old_log_probs, mb_advantages, mb_returns, mb_values = mb
+                    
+                    # CRITICAL FIX: Single forward pass for PPO step
+                    full_sequence = torch.cat([mb_obs, mb_actions], dim=1)
+                    full_logits, _ = model(full_sequence)
+                    obs_len = mb_obs.size(1)
+                    action_logits = full_logits[:, obs_len:, :]  # (B, A, V)
+
+                    # Calculate log-probs and entropy using this single pass
+                    log_probs_all = F.log_softmax(action_logits, dim=-1)
+                    probs_all = F.softmax(action_logits, dim=-1)
+
+                    action_mask = (mb_actions != 0).float()  # relies on <pad>=0
+
+                    gathered_log_probs = log_probs_all.gather(2, mb_actions.unsqueeze(-1)).squeeze(-1)
+                    new_log_probs = (gathered_log_probs * action_mask).sum(dim=1)
+
+                    entropy_per_token = -(probs_all * log_probs_all).sum(dim=-1)
+                    entropy = (entropy_per_token * action_mask).sum() / (action_mask.sum() + 1e-8)
+
+                    # Policy Loss (PPO-Clip)
+                    log_ratio = new_log_probs - mb_old_log_probs
+                    ratio = torch.exp(log_ratio)
+
+                    # Normalize advantages at the minibatch level
+                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+
+                    pg_loss1 = -mb_advantages * ratio
+                    pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_eps, 1 + args.clip_eps)
+                    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+
+                    # Value Loss using current value predictions - gradients should flow through value head
+                    _, v_preds_full = model(mb_obs)
+                    v_preds = v_preds_full[:, -1, :].squeeze(-1)
+                    v_loss = F.mse_loss(v_preds, mb_returns)
+                    
+                    loss = pg_loss - args.ent_coef * entropy + v_loss * args.vf_coef
+                    
+                    optimizer.zero_grad()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
+
+            # --- Logging ---
+            sps = int(global_step / (time.time() - start_time))
+            print(f"SPS: {sps}, Update: {update}")
+            writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+            writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
+            writer.add_scalar("losses/entropy", entropy.item(), global_step)
+
+            # Update progress bar
+            progress_bar.set_postfix({"global_step": global_step, "policy_loss": f"{pg_loss.item():.4f}", "value_loss": f"{v_loss.item():.4f}"})
+            progress_bar.update(1)
+
+            # --- Checkpointing ---
+            if update % 20 == 0:
+                save_checkpoint(
+                    model,
+                    Path(args.checkpoints_dir),
+                    f"agent_step_{global_step}.pt",
+                    optimizer=optimizer,
+                    global_step=global_step,
+                    model_config=model_config,
+                )
+
+    except KeyboardInterrupt:
+        print(f"\nAgentic training interrupted by user at update {update}, global_step {global_step}. Saving current state...")
+        save_checkpoint(
+            model,
+            Path(args.checkpoints_dir),
+            f"agent_step_{global_step}_interrupted.pt",
+            optimizer=optimizer,
+            global_step=global_step,
+            model_config=model_config,
+        )
+        print(f"Saved interrupted checkpoint at step {global_step}")
+        # Close progress bar and resources
+        env.close()
+        progress_bar.close()
+        writer.close()
+        print("--- Agentic Training Interrupted ---")
+        return
 
     env.close()
     progress_bar.close()

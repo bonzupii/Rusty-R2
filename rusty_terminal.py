@@ -71,7 +71,7 @@ CMD_TIMEOUT = 12
 
 def load_r2_model(checkpoint_path: str, device: str) -> torch.nn.Module:
     """Loads an R2 model, inferring architecture from the checkpoint."""
-    
+
     ckpt_data = load_checkpoint(Path(checkpoint_path), device=device)
 
     model_config = ckpt_data['model_config']
@@ -261,65 +261,71 @@ def main():
     dry_run = False
 
     print("Enter ':q' or 'exit' to quit. Enter ':dry' to toggle dry-run mode.")
-    while True:
-        try:
-            user_input = input(f"[{'DRY' if dry_run else 'LIVE'}] USER: ")
-        except (KeyboardInterrupt, EOFError):
-            print("\nExiting."); break
+    try:
+        while True:
+            try:
+                user_input = input(f"[{'DRY' if dry_run else 'LIVE'}] USER: ")
+            except (KeyboardInterrupt, EOFError):
+                print("\nExiting by user request."); break
 
-        if user_input.lower() in [":q", "exit"]:
-            break
-        if user_input.lower() == ":dry":
-            dry_run = not dry_run
-            print(f"Dry-run mode is now {'ON' if dry_run else 'OFF'}."); continue
+            if user_input.lower() in [":q", "exit"]:
+                break
+            if user_input.lower() == ":dry":
+                dry_run = not dry_run
+                print(f"Dry-run mode is now {'ON' if dry_run else 'OFF'}."); continue
 
-        history += f"USER: {user_input}\n"
-        
-        prompt_text = SYSTEM_PREAMBLE + history
-        tokenized_prompt = tokenizer.encode(prompt_text).ids
-        input_ids = torch.tensor([tokenized_prompt[-args.max_seq_len:]], device=device)
+            history += f"USER: {user_input}\n"
+            
+            prompt_text = SYSTEM_PREAMBLE + history
+            tokenized_prompt = tokenizer.encode(prompt_text).ids
+            input_ids = torch.tensor([tokenized_prompt[-args.max_seq_len:]], device=device)
 
-        # Generate response
-        with torch.no_grad():
-            output_ids = runtime_generate(
-                model,
-                input_ids,
-                max_new_tokens=args.max_new_tokens,
-                temperature=0.8,
-                top_k=50,
-                eos_token_id=eos_token_id,
-                device=device
-            )
-        response_text = tokenizer.decode(output_ids[0, input_ids.shape[1]:].tolist())
-        
-        history += f"RUSTY-R2: {response_text}\n"
-        
-        # Parse and Execute
-        action, error = find_and_parse_json(response_text)
-        
-        if error:
-            print(f"\x1b[31mPROTOCOL ERROR: {error}\x1b[0m")
-            history += f"SYSTEM_MSG: Invalid format. {error}. You must respond with a single valid JSON object.\n"
-            continue
+            # Generate response
+            with torch.no_grad():
+                output_ids = runtime_generate(
+                    model,
+                    input_ids,
+                    max_new_tokens=args.max_new_tokens,
+                    temperature=0.8,
+                    top_k=50,
+                    eos_token_id=eos_token_id,
+                    device=device
+                )
+            response_text = tokenizer.decode(output_ids[0, input_ids.shape[1]:].tolist())
+            
+            history += f"RUSTY-R2: {response_text}\n"
+            
+            # Parse and Execute
+            action, error = find_and_parse_json(response_text)
+            
+            if error:
+                print(f"\x1b[31mPROTOCOL ERROR: {error}\x1b[0m")
+                history += f"SYSTEM_MSG: Invalid format. {error}. You must respond with a single valid JSON object.\n"
+                continue
 
-        action_type = action.get("action")
-        result_output = ""
-        if action_type == "MSG":
-            msg = action.get("message", "(empty message)")
-            print(f"\x1b[33mRUSTY-R2:\x1b[0m {msg}")
-        elif action_type == "CMD":
-            cmd = action.get("command")
-            if cmd:
-                result_output = execute_command(cmd, dry_run)
-                print(f"\x1b[32m{result_output}\x1b[0m")
-        elif action_type == "EDIT":
-            path, content = action.get("path"), action.get("content")
-            if path and content is not None:
-                result_output = execute_edit(path, content, dry_run)
-                print(f"\x1b[32m{result_output}\x1b[0m")
-        
-        if result_output:
-            history += result_output + "\n"
+            action_type = action.get("action")
+            result_output = ""
+            if action_type == "MSG":
+                msg = action.get("message", "(empty message)")
+                print(f"\x1b[33mRUSTY-R2:\x1b[0m {msg}")
+            elif action_type == "CMD":
+                cmd = action.get("command")
+                if cmd:
+                    result_output = execute_command(cmd, dry_run)
+                    print(f"\x1b[32m{result_output}\x1b[0m")
+            elif action_type == "EDIT":
+                path, content = action.get("path"), action.get("content")
+                if path and content is not None:
+                    result_output = execute_edit(path, content, dry_run)
+                    print(f"\x1b[32m{result_output}\x1b[0m")
+
+            if result_output:
+                history += result_output + "\n"
+    except KeyboardInterrupt:
+        print("\nTerminal session interrupted by user. Exiting gracefully.")
+    except Exception as e:
+        print(f"\nUnexpected error in terminal session: {e}")
+        print("Exiting...")
 
 if __name__ == "__main__":
     main()

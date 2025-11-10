@@ -367,79 +367,98 @@ def main():
     # Initialize progress bar
     progress_bar = tqdm(range(args.max_steps), desc="Training Steps", unit="step")
 
-    while global_step < args.max_steps:
-        try:
-            for micro_step in range(args.grad_accum_steps):
-                try:
-                    batch = next(data_iterator)
-                except StopIteration:
-                    data_iterator = iter(dataloader)
-                    batch = next(data_iterator)
+    try:
+        while global_step < args.max_steps:
+            try:
+                for micro_step in range(args.grad_accum_steps):
+                    try:
+                        batch = next(data_iterator)
+                    except StopIteration:
+                        data_iterator = iter(dataloader)
+                        batch = next(data_iterator)
 
-                batch = batch.to(device)
-                input_ids = batch
-                labels = input_ids.clone()
-                labels[:, :-1] = input_ids[:, 1:]
-                labels[:, -1] = pad_token_id
+                    batch = batch.to(device)
+                    input_ids = batch
+                    labels = input_ids.clone()
+                    labels[:, :-1] = input_ids[:, 1:]
+                    labels[:, -1] = pad_token_id
 
-                with autocast(enabled=use_amp):
-                    logits, _ = model(input_ids)
-                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=pad_token_id)
-                    loss = loss / args.grad_accum_steps
+                    with autocast(enabled=use_amp):
+                        logits, _ = model(input_ids)
+                        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=pad_token_id)
+                        loss = loss / args.grad_accum_steps
 
-                scaler.scale(loss).backward()
+                    scaler.scale(loss).backward()
 
-            # Use the last loss for tracking
-            final_loss = loss * args.grad_accum_steps  # Undo grad_accum_steps division for display
+                # Use the last loss for tracking
+                final_loss = loss * args.grad_accum_steps  # Undo grad_accum_steps division for display
 
-            scaler.unscale_(optimizer)
+                scaler.unscale_(optimizer)
 
-            # Check if loss is finite before proceeding with optimization
-            if torch.isfinite(loss):
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                scaler.step(optimizer)
-            else:
-                print(f"Warning: Non-finite loss ({loss.item() * args.grad_accum_steps}) at step {global_step}, skipping optimizer step.")
-                # Continue with scaler update but skip the optimizer step
+                # Check if loss is finite before proceeding with optimization
+                if torch.isfinite(loss):
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    scaler.step(optimizer)
+                else:
+                    print(f"Warning: Non-finite loss ({loss.item() * args.grad_accum_steps}) at step {global_step}, skipping optimizer step.")
+                    # Continue with scaler update but skip the optimizer step
 
-            scaler.update()
-            scheduler.step()
-            optimizer.zero_grad()
-            global_step += 1
+                scaler.update()
+                scheduler.step()
+                optimizer.zero_grad()
+                global_step += 1
 
-            # Update progress bar at each step
-            current_loss_val = loss.item() * args.grad_accum_steps if torch.isfinite(loss) else float('nan')
-            progress_bar.set_postfix({
-                "loss": f"{current_loss_val:.4f}" if torch.isfinite(torch.tensor(current_loss_val)) else "nan",
-                "lr": f"{scheduler.get_last_lr()[0]:.2e}"
-            })
-            progress_bar.update(1)
+                # Update progress bar at each step
+                current_loss_val = loss.item() * args.grad_accum_steps if torch.isfinite(loss) else float('nan')
+                progress_bar.set_postfix({
+                    "loss": f"{current_loss_val:.4f}" if torch.isfinite(torch.tensor(current_loss_val)) else "nan",
+                    "lr": f"{scheduler.get_last_lr()[0]:.2e}"
+                })
+                progress_bar.update(1)
 
-            if global_step % args.log_interval == 0:
-                loss_str = f"{current_loss_val:.4f}" if torch.isfinite(torch.tensor(current_loss_val)) else "nan"
-                print(f"Step: {global_step:6d} | Loss: {loss_str} | LR: {scheduler.get_last_lr()[0]:.2e}")
+                if global_step % args.log_interval == 0:
+                    loss_str = f"{current_loss_val:.4f}" if torch.isfinite(torch.tensor(current_loss_val)) else "nan"
+                    print(f"Step: {global_step:6d} | Loss: {loss_str} | LR: {scheduler.get_last_lr()[0]:.2e}")
 
-            if global_step % args.ckpt_interval == 0:
-                save_checkpoint(
-                    model,
-                    checkpoint_dir=Path(args.checkpoints_dir),
-                    filename=f"step_{global_step}.pt",
-                    optimizer=optimizer,
-                    scheduler=scheduler,
-                    scaler=scaler,
-                    global_step=global_step,
-                    model_config=model_config,
-                )
+                if global_step % args.ckpt_interval == 0:
+                    save_checkpoint(
+                        model,
+                        checkpoint_dir=Path(args.checkpoints_dir),
+                        filename=f"step_{global_step}.pt",
+                        optimizer=optimizer,
+                        scheduler=scheduler,
+                        scaler=scaler,
+                        global_step=global_step,
+                        model_config=model_config,
+                    )
 
-        except torch.cuda.OutOfMemoryError:
-            print(f"OOM at batch size {current_batch_size}. Halving and retrying.")
-            torch.cuda.empty_cache()
-            current_batch_size //= 2
-            if current_batch_size < 1:
-                print("Batch size is zero. Aborting.")
-                break
-            dataloader = DataLoader(dataset, batch_size=current_batch_size, num_workers=1)
-            data_iterator = iter(dataloader)
+            except torch.cuda.OutOfMemoryError:
+                print(f"OOM at batch size {current_batch_size}. Halving and retrying.")
+                torch.cuda.empty_cache()
+                current_batch_size //= 2
+                if current_batch_size < 1:
+                    print("Batch size is zero. Aborting.")
+                    break
+                dataloader = DataLoader(dataset, batch_size=current_batch_size, num_workers=1)
+                data_iterator = iter(dataloader)
+
+    except KeyboardInterrupt:
+        print(f"\nTraining interrupted by user at step {global_step}. Saving current state...")
+        save_checkpoint(
+            model,
+            checkpoint_dir=Path(args.checkpoints_dir),
+            filename=f"step_{global_step}_interrupted.pt",
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=scaler,
+            global_step=global_step,
+            model_config=model_config,
+        )
+        print(f"Saved interrupted checkpoint at step {global_step}")
+        # Close progress bar
+        progress_bar.close()
+        print("--- Training Interrupted ---")
+        return
 
     # Final checkpoint after training loop
     if global_step > 0:
@@ -454,6 +473,10 @@ def main():
             model_config=model_config,
         )
         print(f"Saved final checkpoint at step {global_step}")
+
+    # Close progress bar
+    progress_bar.close()
+    print("--- Training Complete ---")
 
     # Close progress bar
     progress_bar.close()
