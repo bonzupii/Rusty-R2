@@ -1,0 +1,140 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+env.bak/
+.ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+jupyter.log
+
+# Checkpoints & Model Artifacts (these are large)
+checkpoints/
+checkpoints_*/
+**/checkpoints/
+**/step_*.pt
+**/agent_step_*.pt
+**/*checkpoint*/
+
+# Data files (large training datasets - these should be downloaded separately)
+# Raw data files
+data/raw/**
+# HuggingFace cached datasets (large arrow files)
+data/hf/**/*.arrow
+data/hf/**/state.json
+data/hf/**/dataset_info.json
+data/hf/**/dataset_dict.json
+# But keep the data directory structure
+!data/
+!data/hf/
+!data/raw/
+
+# Temp files, runs and temporary outputs
+tmp_*/
+runs/
+runs_*/
+**/tmp_*/
+**/runs/
+temp_*/
+**/temp_*/
+
+# Dumps and output files (these are generated)
+dump.txt
+dump_*.txt
+dump*/**/*
+**/output_*.txt
+**/results_*.txt
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Local configs
+.local/
+config.json
+secrets.json
+.api_key
+.env
+
+# Compiled binaries
+*.bin
+*.exe
+*.dll
+*.dylib
+
+# Training artifacts/logs
+tensorboard_logs/
+tb_logs/
+wandb/
+**/tensorboard_logs/
+**/wandb/
+**/*.log
+
+# Test artifacts
+**/test_output_*.txt
+**/test_result_*.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Training cache
+**/cache/
+**/cached_*
+**/temp_*
+
+# Other generated files
+**/*generated*
+**/tmp_*
+
+# Model-specific outputs
+**/model_*.pt
+**/model_*.bin
+**/pytorch_model.bin
+
+# All tokenizer files (these are generated from data)
+rusty_r2/tokenizer/**
+
+# Temp files and test runs
+ck_test/**
+**/*test.pt
+**/*_test.py
+**/temp_*
+**/tmp_*
