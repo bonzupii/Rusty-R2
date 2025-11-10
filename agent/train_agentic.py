@@ -183,9 +183,8 @@ def main():
                 pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_eps, 1 + args.clip_eps)
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-                # Value Loss using current value predictions
-                with torch.no_grad():
-                    _, v_preds_full = model(mb_obs)
+                # Value Loss using current value predictions - gradients should flow through value head
+                _, v_preds_full = model(mb_obs)
                 v_preds = v_preds_full[:, -1, :].squeeze(-1)
                 v_loss = F.mse_loss(v_preds, mb_returns)
                 

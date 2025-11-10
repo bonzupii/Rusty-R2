@@ -310,14 +310,14 @@ def main():
     global_step = 0
     if args.resume_from_checkpoint:
         print(f"Resuming from checkpoint: {args.resume_from_checkpoint}")
-        ckpt_data = load_checkpoint(
-            Path(args.resume_from_checkpoint),
-            model,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            scaler=scaler,
-            device=device
-        )
+        ckpt_data = load_checkpoint(Path(args.resume_from_checkpoint), device=device)
+        model.load_state_dict(ckpt_data["model_state_dict"])
+        if "optimizer_state_dict" in ckpt_data:
+            optimizer.load_state_dict(ckpt_data["optimizer_state_dict"])
+        if "scheduler_state_dict" in ckpt_data:
+            scheduler.load_state_dict(ckpt_data["scheduler_state_dict"])
+        if "scaler_state_dict" in ckpt_data:
+            scaler.load_state_dict(ckpt_data["scaler_state_dict"])
         global_step = ckpt_data.get('global_step', 0)
 
     # Find HuggingFace dataset directories and text files
