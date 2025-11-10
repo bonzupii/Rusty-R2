@@ -208,7 +208,14 @@ def main():
 
         # --- Checkpointing ---
         if update % 20 == 0:
-            save_checkpoint(model, Path(args.checkpoints_dir), f"agent_step_{global_step}.pt", model_config=model_config)
+            save_checkpoint(
+                model,
+                Path(args.checkpoints_dir),
+                f"agent_step_{global_step}.pt",
+                optimizer=optimizer,
+                global_step=global_step,
+                model_config=model_config,
+            )
 
     env.close()
     progress_bar.close()

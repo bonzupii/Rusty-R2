@@ -59,7 +59,8 @@ rusty-r2/
 ├── tests/
 │   ├── test_r2_equivalence.py     # Original test suite for R2 components.
 │   ├── test_tokenizer_specials.py # Test for tokenizer special token IDs.
-│   └── test_checkpoint_roundtrip.py # Test for checkpoint functionality.
+│   ├── test_checkpoint_roundtrip.py # Test for checkpoint functionality.
+│   └── test_protocol_sandbox.py   # Tests for protocol parsing and sandboxing.
 ├── utils/
 │   ├── checkpoint.py       # Centralized checkpoint saving/loading utilities.
 │   └── rl.py               # PPO RolloutBuffer and action generation helpers.
@@ -134,6 +135,9 @@ rusty-r2/
     python -m unittest tests/test_r2_equivalence.py
     python -m unittest tests/test_tokenizer_specials.py
     python -m unittest tests/test_checkpoint_roundtrip.py
+    python -m unittest tests/test_protocol_sandbox.py
+    # Or run all tests:
+    python -m unittest discover -s tests
     ```
 
 7.  **Interact with Rusty-R2**:

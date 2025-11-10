@@ -46,6 +46,9 @@ FILES_TO_DUMP = [
     "tasks/sum_list/template.py", 
     "tasks/sum_list/tests.py",
     "tests/test_r2_equivalence.py",
+    "tests/test_tokenizer_specials.py",
+    "tests/test_checkpoint_roundtrip.py",
+    "tests/test_protocol_sandbox.py",
 
     # Documentation
     "docs/rusty_r2_upgrade.md",
@@ -74,6 +77,8 @@ def create_dump():
             
             try:
                 content = file_path.read_text(encoding="utf-8")
+                # Filter out license headers for cleaner dumps
+                content = remove_license_headers(content)
                 dump_file.write(content)
             except FileNotFoundError:
                 dump_file.write("!!! FILE NOT FOUND !!!\n")
@@ -85,6 +90,43 @@ def create_dump():
             dump_file.write("\n\n")
 
     print(f"\nDump complete. All specified files have been written to '{OUTPUT_FILE}'.")
+
+def remove_license_headers(content):
+    """Remove license headers from content for cleaner dumps."""
+    import re
+    
+    # Split content into lines
+    lines = content.split('\n')
+    
+    # Find the start and end of license headers
+    filtered_lines = []
+    in_license_header = False
+    i = 0
+    
+    while i < len(lines):
+        line = lines[i]
+        
+        # Check if this line starts a license header pattern
+        if (line.strip().startswith('# FILE:') or 
+            'Copyright (C)' in line or 
+            'Licensed under the GNU' in line or 
+            'Affero General Public License' in line):
+            in_license_header = True
+        elif in_license_header and line.strip().startswith('#') and not line.strip() == '#':
+            # Continue skipping lines in the header (but not empty comment lines)
+            pass
+        elif in_license_header and not line.strip().startswith('#'):
+            # End of license header, add this line and continue
+            in_license_header = False
+            filtered_lines.append(line)
+        else:
+            # Not in a license header, add the line
+            filtered_lines.append(line)
+        
+        i += 1
+    
+    # Join the lines back together
+    return '\n'.join(filtered_lines)
 
 if __name__ == "__main__":
     create_dump()
