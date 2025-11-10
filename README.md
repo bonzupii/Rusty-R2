@@ -6,6 +6,11 @@ Rusty-R2 is the next generation of our small, agentic language model, designed t
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See the [LICENSE](./LICENSE) file for details.
 
+### Copyright Notice
+All files in this repository include a copyright notice. The primary copyright holder is Micah L. Ostrow <bonzupii@protonmail.com>. 
+
+Contributors are encouraged to add their own copyright notices to any new files they create, to decentralize the copyleft ownership of this project and strengthen the AGPL protections across the community. Each file contains attribution information in the comments at the top of the file.
+
 ## Persona: Rusty-R2
 
 - **Origin**: An upgraded hackerbot from a digital Scrapyard.
