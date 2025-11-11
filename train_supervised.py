@@ -327,6 +327,12 @@ def main():
     hf_dirs = find_hf_datasets(data_path)
     text_files = find_text_files(data_path)
 
+    # Look in subdirectories for HF datasets and text files as well
+    for subdir in data_path.iterdir():
+        if subdir.is_dir():
+            hf_dirs.extend(find_hf_datasets(subdir))
+            text_files.extend(find_text_files(subdir))
+
     # Use HuggingFace datasets if available, otherwise use text files
     if hf_dirs and HF_AVAILABLE:
         print(f"Found {len(hf_dirs)} HuggingFace dataset directories")
@@ -337,26 +343,7 @@ def main():
         # Use raw text files
         dataset = ConcatenatedTextDataset(text_files, tokenizer, args.seq_len)
     else:
-        print(f"No datasets found in {args.data_dir}")
-        print("Looking for text files in subdirectories...")
-        # Try looking in subdirectories for text files
-        for subdir in data_path.iterdir():
-            if subdir.is_dir():
-                text_files.extend(find_text_files(subdir))
-        if text_files:
-            print(f"Found {len(text_files)} text files in subdirectories")
-            dataset = ConcatenatedTextDataset(text_files, tokenizer, args.seq_len)
-        else:
-            # Look for HF datasets in subdirs too
-            hf_dirs = []  # Reset to empty list
-            for subdir in data_path.iterdir():
-                if subdir.is_dir():
-                    hf_dirs.extend(find_hf_datasets(subdir))
-            if hf_dirs and HF_AVAILABLE:
-                print(f"Found {len(hf_dirs)} HuggingFace datasets in subdirectories")
-                dataset = HFDatasetWrapper(hf_dirs, tokenizer, args.seq_len)
-            else:
-                raise ValueError(f"No text files or HuggingFace datasets found in {args.data_dir}")
+        raise ValueError(f"No text files or HuggingFace datasets found in {args.data_dir}")
 
     current_batch_size = args.batch_size
     dataloader = DataLoader(dataset, batch_size=current_batch_size, num_workers=2)

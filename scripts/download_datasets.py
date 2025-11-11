@@ -1,61 +1,102 @@
+#!/usr/bin/env python3
 # FILE: scripts/download_datasets.py
-# Copyright (C) Micah L. Ostrow <bonzupii@protonmail.com> 
+# Copyright (C) Micah L. Ostrow
 # Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
 #
-# This file is part of Rusty-R2: A Scrapyard Language Model (Next Generation).
-# 
-# Rusty-R2 is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-# 
-# Rusty-R2 is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Simple dataset downloader for Rusty-R2.
+# Just downloads the datasets. No pre-checks, no size limits, no license checks.
 
 import argparse
+import sys
 from pathlib import Path
+
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 from datasets import load_dataset
 
-# Datasets to download
-# Format: (huggingface_name, subset, local_name, trust_remote_code)
-DATASETS_TO_DOWNLOAD = [
-    ("glaiveai/glaive-code-assistant-v2", None, "glaive_v2", False),
-    ("Nan-Do/code-search-net-javascript", None, "codesearchnet_js", False),
-    ("codeparrot/apps", None, "apps", True),
-    ("huybery/repair", None, "code_repair", False),
-    ("MuskumPillerum/General-Knowledge", None, "general_knowledge", False),
+# List of datasets to download
+DATASETS = [
+    # Your 7 successfully downloaded datasets
+    {
+        "hf_name": "codeparrot/apps",
+        "subset": None,
+        "local_name": "apps",
+    },
+    {
+        "hf_name": "wikimedia/wikipedia",
+        "subset": "20231101.en",
+        "local_name": "wikipedia_en_20231101",
+    },
+    {
+        "hf_name": "openai/gsm8k",
+        "subset": "main",
+        "local_name": "gsm8k_openai",
+    },
+    {
+        "hf_name": "OpenAssistant/oasst1",
+        "subset": None,
+        "local_name": "oasst1",
+    },
+    # NEW: General multi-language coding knowledge dataset (~15-18GB)
+    # the-stack-smol-xl: 87 programming languages, 10k samples each
+    {
+        "hf_name": "bigcode/the-stack-smol-xl",
+        "subset": None,
+        "local_name": "the_stack_smol_xl",
+    },
 ]
 
-def download_and_save_dataset(
-    hf_name: str,
-    subset: str | None,
-    local_name: str,
-    trust_remote_code: bool,
-    output_dir: Path,
-):
-    """Downloads a dataset from Hugging Face and saves it to disk."""
-    save_path = output_dir / local_name
-    if save_path.exists():
-        print(f"Dataset '{local_name}' already exists at {save_path}. Skipping.")
-        return
 
-    print(f"Downloading '{hf_name}' (subset: {subset or 'all'})...")
-    try:
-        dataset = load_dataset(
-            hf_name,
-            subset,
-            streaming=False,
-            trust_remote_code=trust_remote_code
-        )
-        dataset.save_to_disk(str(save_path))
-        print(f"Successfully saved '{local_name}' to {save_path}")
-    except Exception as e:
-        print(f"Failed to download or save '{hf_name}': {e}")
+def download_datasets(output_dir: Path):
+    """Download all datasets in the list."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for spec in DATASETS:
+        hf_name = spec["hf_name"]
+        subset = spec.get("subset")
+        local_name = spec["local_name"]
+        save_path = output_dir / local_name
+
+        print(f"\n{'=' * 60}")
+        print(f"Dataset: {hf_name} [{subset}]")
+        print(f"Saving to: {save_path}")
+        print(f"{'=' * 60}")
+
+        if save_path.exists():
+            print(f"✓ Already exists, skipping")
+            continue
+
+        try:
+            print(f"Downloading...")
+
+            # Special handling for specific datasets
+            if hf_name == "Muennighoff/mbpp":
+                ds = load_dataset(
+                    hf_name, subset, streaming=False, trust_remote_code=True
+                )
+            else:
+                ds = load_dataset(hf_name, subset, streaming=False)
+
+            print(f"Saving to disk...")
+            ds.save_to_disk(str(save_path))
+            print(f"✓ Successfully downloaded and saved")
+
+        except Exception as e:
+            print(f"✗ ERROR: {e}")
+            print(f"Continuing to next dataset...")
+            continue
+
+    print(f"\n{'=' * 60}")
+    print("Download process complete!")
+    print(f"{'=' * 60}")
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Download curated code datasets from Hugging Face.")
+    parser = argparse.ArgumentParser(
+        description="Download datasets for Rusty-R2. Simple and straightforward."
+    )
     parser.add_argument(
         "--output_dir",
         type=Path,
@@ -64,12 +105,9 @@ def main():
     )
     args = parser.parse_args()
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    download_datasets(args.output_dir)
 
-    for hf_name, subset, local_name, trust_remote_code in DATASETS_TO_DOWNLOAD:
-        download_and_save_dataset(hf_name, subset, local_name, trust_remote_code, args.output_dir)
-
-    print("\n--- Dataset download process complete. ---")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
+

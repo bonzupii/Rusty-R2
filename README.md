@@ -1,6 +1,6 @@
 # Rusty-R2: A Scrapyard Language Model (Next Generation)
 
-Rusty-R2 is the next generation of our small, agentic language model, designed to function as a cynical, technically-focused terminal assistant. This project represents a significant architectural upgrade from Rusty-R1, moving to more modern model architectures, a robust PPO-based training pipeline, and enhanced safety features.
+Rusty-R2 is the next generation of our small, agentic language model, designed to function as a cynical, technically-focused terminal assistant. This project represents a significant architectural upgrade from Rusty-R1, moving to more modern model architectures, a foundation model trained from scratch, a robust PPO-based training pipeline, and enhanced safety features.
 
 ## License
 
